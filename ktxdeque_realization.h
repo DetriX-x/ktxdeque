@@ -16,10 +16,26 @@ deque<T, Allocator>::deque(
         ) {
 }
 
-// TODO:
+// TODO: ai_ != n
 template<typename T, typename Allocator>
-deque<T, Allocator>::deque(size_type n, const T& val, Allocator a) 
-    : sz_{n} {
+deque<T, Allocator>::deque(size_type n, const T& val, Allocator a) : ai_{0}, sz_{n} {
+    auto blocks_count = n*2 / BlockSize + (n*2 % BlockSize ? 1 : 0);
+    auto count_of_free_cells = blocks_count * BlockSize;
+    ai_ = (count_of_free_cells - n) / 2 - 1;
+    allocateBlocks(blocks_count);
+
+    auto i = begin();
+    try {
+        for (; i != end(); ++i) {
+            alloc_traits::construct(alloc_, &*i, val);
+        }
+    } catch (...) {
+        for (auto j = begin(); j != i; ++j) {
+            alloc_traits::destroy(alloc_, &*j);
+        }
+        deallocateBlocks();
+        throw;
+    }
 }
 
 // TODO:
@@ -49,16 +65,20 @@ void deque<T, Allocator>::push_front(value_type value) {
     emplace_front(std::move(value));
 }
 
-// TODO:
 template<typename T, typename Allocator>
 void deque<T, Allocator>::clear() {
+    for (auto& i: *this) {
+        alloc_traits::destroy(alloc_, &i);
+    }
+}
+
+template<typename T, typename Allocator>
+deque<T, Allocator>::~deque() {
+    clear();
+    deallocateBlocks();
 }
 
 // TODO:
-template<typename T, typename Allocator>
-deque<T, Allocator>::~deque() {
-}
-
 template<typename T, typename Allocator>
 template <typename Self>
 constexpr auto deque<T, Allocator>::at(this Self&& self,
@@ -99,13 +119,6 @@ void deque<T, Allocator>::pop_front() {
 }
 
 // private
-
-
-// TODO:
-template<typename T, typename Allocator>
-void deque<T, Allocator>::destroy_all() {
-}
-
 
 template <typename T, typename Allocator>
 template <std::input_iterator InputIt,
@@ -185,9 +198,11 @@ deque<T, Allocator>::iterator deque<T, Allocator>::erase(
 
 // friend
 
-// TODO:
 template<typename T, typename Allocator>
 void swap(deque<T, Allocator>& to, deque<T, Allocator>& from) {
+    std::swap(from.outer_, to.outer_);
+    std::swap(from.ai_, to.ai_);
+    std::swap(from.sz_, to.sz_);
 }
 
 // global
@@ -204,6 +219,7 @@ std::ostream& operator<<(std::ostream& os,
 
     return os;
 }
+
 
 
 };

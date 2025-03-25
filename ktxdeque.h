@@ -107,7 +107,9 @@ public:
         std::is_const_v<std::remove_reference_t<Self>>,
         const_reference,
         reference> {
-        return std::forward<Self>(self).data_[index];
+        auto bi = (self.ai_ + index) / BlockSize;
+        auto ri = (self.ai_ + index) % BlockSize;
+        return std::forward<Self>(self).outer_[bi][ri];
     }
 
     size_type size() const { return sz_; }
@@ -144,34 +146,29 @@ public:
 
     // iterator
 
-    // TODO:
     iterator begin() {
-        return {};
+        return {outer_.data(), ai_};
     }
 
-    // TODO:
     iterator end() {
-        return {};
+        return {outer_.data(), ai_ + sz_};
     }
 
-    // TODO:
+    
     const_iterator begin() const {
-        return {};
+        return {outer_.data(), ai_};
     }
 
-    // TODO:
     const_iterator end() const {
-        return {};
+        return {outer_.data(), ai_ + sz_};
     }
 
-    // TODO:
     const_iterator cbegin() const {
-        return {};
+        return {outer_.data(), ai_};
     }
 
-    // TODO:
     const_iterator cend() const {
-        return {};
+        return {outer_.data(), ai_ + sz_};
     }
 
 private:
@@ -190,16 +187,34 @@ private:
             InputIt last,
             NoThrowForwardIt d_first,
             UnaryPred P = [](){return false;}) -> NoThrowForwardIt;
-    
-    // TODO:
-    void destroy_all();
-    
 
-    // TODO:
+    void allocateBlocks(size_t n) {
+        outer_.resize(n);
+        size_t i = 0;
+        try {
+            for (; i < n; ++i) {
+                auto& p = outer_[i];
+                p = alloc_traits::allocate(alloc_, BlockSize);
+            }
+        } catch (std::bad_alloc&) {
+            for (size_t j = 0; j != i; ++j) {
+                auto p = outer_[j];
+                alloc_traits::deallocate(alloc_, p, BlockSize); 
+            }
+            throw;
+        }
+    }
+
+    void deallocateBlocks() {
+        for (auto p: outer_) {
+            alloc_traits::deallocate(alloc_, p, BlockSize);
+        }
+    }
+
     template<bool isConst>
     class base_iterator {
     public:
-        friend class deque<T>;
+        friend class deque<T, Allocator>;
         using iterator_category = std::random_access_iterator_tag;
         using value_type = deque<T>::value_type;
         using difference_type = ptrdiff_t;
@@ -214,81 +229,86 @@ private:
 
         friend difference_type operator-(base_iterator a,
                 base_iterator b) {
-            return a.ptr_ - b.ptr_;
+            return a.ai_ - b.ai_;
         }
 
         friend base_iterator operator+(base_iterator it,
                                                difference_type index) {
-           it.ptr_ += index;
+           it.ai_ += index;
            return {it};
         }
 
         friend base_iterator operator-(base_iterator it,
                                                difference_type index) {
-           it.ptr_ -= index;
+           it.ai_ -= index;
            return {it};
         }
 
         friend base_iterator operator+(difference_type index,
                                                base_iterator it) {
-           it.ptr_ += index;
+           it.ai_ += index;
            return {it};
         }
 
         friend base_iterator operator-(difference_type index,
                                                base_iterator it) {
-           it.ptr_ -= index;
+           it.ai_ -= index;
            return {it};
         }
 
         iterator& operator+=(difference_type index) {
-            ptr_ += index;
+            ai_ += index;
         }
 
         iterator& operator-=(difference_type index) {
-            ptr_ -= index;
+            ai_ -= index;
         }
 
         base_iterator& operator++() {
-            ++ptr_;
+            ++ai_;
             return *this;
         }
 
         base_iterator operator++(int) {
             base_iterator it = *this;
-            ++ptr_;
+            ++ai_;
             return it;
         }
 
         base_iterator& operator--() {
-            --ptr_;
+            --ai_;
             return *this;
         }
 
         base_iterator operator--(int) {
             base_iterator it = *this;
-            --ptr_;
+            --ai_;
             return it;
         }
 
         reference operator*() const {
-            return *ptr_;
+            auto bi = ai_ / BlockSize;
+            auto ri = ai_ % BlockSize;
+            return ptr_[bi][ri];
         }
 
         pointer operator->() const {
-            return ptr_;
+            auto bi = ai_ / BlockSize;
+            auto ri = ai_ % BlockSize;
+            return ptr_[bi] + ri;
         }
 
         auto operator<=>(const base_iterator& it) const = default;
 
         operator base_iterator<true>() const {
-            return ptr_;
+            return {ptr_, ai_};
         }
 
     private:
-        pointer ptr_;
-        base_iterator(T* ptr) noexcept
-            : ptr_{ptr} {}
+        pointer* ptr_;
+        size_t ai_;
+        base_iterator(pointer* ptr, size_t ai) noexcept
+            : ptr_{ptr}, ai_{ai} {}
     };
 };
 
