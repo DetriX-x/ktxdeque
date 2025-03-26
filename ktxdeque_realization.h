@@ -9,19 +9,36 @@ namespace ktx {
 
 // public
 
-// TODO:
 template<typename T, typename Allocator>
-deque<T, Allocator>::deque(
-        const std::initializer_list<value_type> items, Allocator alloc
-        ) {
+deque<T, Allocator>::deque(const std::initializer_list<value_type> items, Allocator alloc) : ai_{0}, sz_{std::size(items)} {
+    auto blocks_count = sz_*2 / BlockSize + (sz_*2 % BlockSize ? 1 : 0);
+    auto count_of_free_cells = blocks_count * BlockSize;
+    ai_ = (count_of_free_cells - sz_) / 2 - 1;
+
+
+    allocateBlocks(blocks_count);
+
+    auto i = begin();
+    auto items_it = items.begin();
+    try {
+        for (; i != end(); ++i, ++items_it) {
+            alloc_traits::construct(alloc_, &*i, std::move_if_noexcept(*items_it));
+        }
+    } catch (...) {
+        for (auto j = begin(); j != i; ++j) {
+            alloc_traits::destroy(alloc_, &*j);
+        }
+        deallocateBlocks();
+        throw;
+    }
 }
 
-// TODO: ai_ != n
 template<typename T, typename Allocator>
 deque<T, Allocator>::deque(size_type n, const T& val, Allocator a) : ai_{0}, sz_{n} {
     auto blocks_count = n*2 / BlockSize + (n*2 % BlockSize ? 1 : 0);
     auto count_of_free_cells = blocks_count * BlockSize;
     ai_ = (count_of_free_cells - n) / 2 - 1;
+
     allocateBlocks(blocks_count);
 
     auto i = begin();
@@ -38,9 +55,25 @@ deque<T, Allocator>::deque(size_type n, const T& val, Allocator a) : ai_{0}, sz_
     }
 }
 
-// TODO:
 template<typename T, typename Allocator>
-deque<T, Allocator>::deque(const deque<T, Allocator>& other) {
+deque<T, Allocator>::deque(const deque<T, Allocator>& other)
+    : ai_{other.ai_}
+    , sz_{other.sz_}
+    , outer_{} {
+    allocateBlocks(other.outer_.size());
+    auto i = begin();
+    auto other_i = other.begin();
+    try {
+        for (; i != end(); ++i, ++other_i) {
+            alloc_traits::construct(alloc_, &*i, std::move_if_noexcept(*other_i));
+        }
+    } catch (...) {
+        for (auto j = begin(); j != i; ++j) {
+            alloc_traits::destroy(alloc_, &*j);
+        }
+        deallocateBlocks();
+        throw;
+    }
 }
 
 // TODO:
@@ -78,7 +111,6 @@ deque<T, Allocator>::~deque() {
     deallocateBlocks();
 }
 
-// TODO:
 template<typename T, typename Allocator>
 template <typename Self>
 constexpr auto deque<T, Allocator>::at(this Self&& self,
@@ -90,7 +122,7 @@ std::conditional_t<
         if (index >= self.sz_) {
             throw std::out_of_range{"Index is out of range of deque"};
         }
-        return std::forward<Self>(self).data_[index];
+        return std::forward<Self>(self)[index];
 }
 
 // TODO:

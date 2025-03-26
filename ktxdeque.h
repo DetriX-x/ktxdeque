@@ -37,7 +37,13 @@ public:
 private:
     size_type ai_;
     size_type sz_;
-    vector<pointer> outer_;
+
+#if defined(KTXDEBUG)
+    using rebinded = std::allocator<pointer>;
+#else 
+    using rebinded = typename alloc_traits::template rebind_alloc<pointer>;
+#endif
+    vector<pointer, rebinded> outer_;
     [[no_unique_address]] allocator_type alloc_;
 
     static constexpr int BlockSize = 8;
@@ -163,7 +169,13 @@ public:
         return {outer_.data(), ai_ + sz_};
     }
 
+    struct D {
+        D() = delete;
+    };
     const_iterator cbegin() const {
+        if constexpr (std::is_const_v<std::remove_reference_t<decltype(outer_.data())>>) {
+            D d;
+        }
         return {outer_.data(), ai_};
     }
 
@@ -219,6 +231,7 @@ private:
         using value_type = deque<T>::value_type;
         using difference_type = ptrdiff_t;
         using pointer = std::conditional_t<isConst, const T*, T*>;
+        using pointer_to_pointer = std::conditional_t<isConst, const T* const*, T**>;
         using reference = std::conditional_t<isConst, const T&, T&>;
 
         base_iterator(const base_iterator&) = default;
@@ -305,9 +318,9 @@ private:
         }
 
     private:
-        pointer* ptr_;
+        pointer_to_pointer ptr_;
         size_t ai_;
-        base_iterator(pointer* ptr, size_t ai) noexcept
+        base_iterator(pointer_to_pointer ptr, size_t ai) noexcept
             : ptr_{ptr}, ai_{ai} {}
     };
 };
