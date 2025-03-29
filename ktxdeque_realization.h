@@ -13,10 +13,11 @@ template<typename T, typename Allocator>
 deque<T, Allocator>::deque(const std::initializer_list<value_type> items, Allocator alloc) : ai_{0}, sz_{std::size(items)} {
     auto blocks_count = sz_*2 / BlockSize + (sz_*2 % BlockSize ? 1 : 0);
     auto count_of_free_cells = blocks_count * BlockSize;
-    ai_ = (count_of_free_cells - sz_) / 2 - 1;
+    ai_ = (count_of_free_cells - sz_) / 2;
 
 
-    allocateBlocks(blocks_count);
+    outer_.resize(blocks_count);
+    allocateBlocks(outer_, 0, blocks_count);
 
     auto i = begin();
     auto items_it = items.begin();
@@ -28,7 +29,7 @@ deque<T, Allocator>::deque(const std::initializer_list<value_type> items, Alloca
         for (auto j = begin(); j != i; ++j) {
             alloc_traits::destroy(alloc_, &*j);
         }
-        deallocateBlocks();
+        deallocateBlocks(outer_);
         throw;
     }
 }
@@ -37,9 +38,10 @@ template<typename T, typename Allocator>
 deque<T, Allocator>::deque(size_type n, const T& val, Allocator a) : ai_{0}, sz_{n} {
     auto blocks_count = n*2 / BlockSize + (n*2 % BlockSize ? 1 : 0);
     auto count_of_free_cells = blocks_count * BlockSize;
-    ai_ = (count_of_free_cells - n) / 2 - 1;
+    ai_ = (count_of_free_cells - n) / 2;
 
-    allocateBlocks(blocks_count);
+    outer_.resize(blocks_count);
+    allocateBlocks(outer_, 0, blocks_count);
 
     auto i = begin();
     try {
@@ -50,7 +52,7 @@ deque<T, Allocator>::deque(size_type n, const T& val, Allocator a) : ai_{0}, sz_
         for (auto j = begin(); j != i; ++j) {
             alloc_traits::destroy(alloc_, &*j);
         }
-        deallocateBlocks();
+        deallocateBlocks(outer_);
         throw;
     }
 }
@@ -60,7 +62,8 @@ deque<T, Allocator>::deque(const deque<T, Allocator>& other)
     : ai_{other.ai_}
     , sz_{other.sz_}
     , outer_{} {
-    allocateBlocks(other.outer_.size());
+    outer_.resize(other.outer_.size());
+    allocateBlocks(outer_, 0, other.outer_.size());
     auto i = begin();
     auto other_i = other.begin();
     try {
@@ -71,21 +74,76 @@ deque<T, Allocator>::deque(const deque<T, Allocator>& other)
         for (auto j = begin(); j != i; ++j) {
             alloc_traits::destroy(alloc_, &*j);
         }
-        deallocateBlocks();
+        deallocateBlocks(outer_);
         throw;
     }
 }
 
-// TODO:
 template <typename T, typename Allocator>
 template <typename... Args>
 void deque<T, Allocator>::emplace_back(Args&&... args) {
+    auto n = outer_.size() * BlockSize;
+    if (ai_ + sz_ < n) {
+        alloc_traits::construct(alloc_, &*end(), std::forward<Args>(args)...);
+        ++sz_;
+        return;
+    }
+    const auto freeBlocksFromTop = ai_ / BlockSize;
+    const auto freeBlocksFromBot = (n - (ai_ + sz_) + 1) / BlockSize;
+    const auto occupiedBlocks = outer_.size() - freeBlocksFromBot - freeBlocksFromTop;
+    const auto newBlockCount = occupiedBlocks * expansion + outer_.size();
+
+    vector<pointer, rebinded> newOuter(newBlockCount);
+
+    size_t i = 0;
+    for (; i < outer_.size(); ++i) {
+        newOuter[i] = outer_[i];
+    }
+    allocateBlocks(newOuter, i, newBlockCount);
+
+    try {
+        alloc_traits::construct(alloc_, &newOuter[i][0], std::forward<Args>(args)...);
+    } catch (...) {
+        deallocateBlocks(newOuter, i);
+    }
+
+    std::swap(outer_, newOuter);
+    ++sz_;
 }
 
-// TODO:
 template <typename T, typename Allocator>
 template <typename... Args>
 void deque<T, Allocator>::emplace_front(Args&&... args) {
+    auto n = outer_.size() * BlockSize;
+    if (ai_ != 0) {
+        alloc_traits::construct(alloc_, &*(begin() - 1), std::forward<Args>(args)...);
+        --ai_;
+        ++sz_;
+        return;
+    }
+    const auto freeBlocksFromTop = ai_ / BlockSize;
+    const auto freeBlocksFromBot = (n - (ai_ + sz_) + 1) / BlockSize;
+    const auto occupiedBlocks = outer_.size() - freeBlocksFromBot - freeBlocksFromTop;
+    const auto newBlockCount = occupiedBlocks * expansion + outer_.size();
+
+    vector<pointer, rebinded> newOuter(newBlockCount);
+
+    size_t offset = newBlockCount - outer_.size();
+    allocateBlocks(newOuter, 0, offset);
+    for (size_t i = 0; i < outer_.size(); ++i) {
+        newOuter[i + offset] = outer_[i];
+    }
+
+    try {
+        alloc_traits::construct(alloc_, &newOuter[offset - 1][BlockSize - 1], std::forward<Args>(args)...);
+    } catch (...) {
+        deallocateBlocks(newOuter, offset);
+    }
+
+    std::swap(outer_, newOuter);
+    ai_ += offset * BlockSize;
+    --ai_;
+    ++sz_;
 }
 
 template<typename T, typename Allocator>
@@ -108,7 +166,7 @@ void deque<T, Allocator>::clear() {
 template<typename T, typename Allocator>
 deque<T, Allocator>::~deque() {
     clear();
-    deallocateBlocks();
+    deallocateBlocks(outer_);
 }
 
 template<typename T, typename Allocator>

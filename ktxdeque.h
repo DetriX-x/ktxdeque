@@ -47,6 +47,7 @@ private:
     [[no_unique_address]] allocator_type alloc_;
 
     static constexpr int BlockSize = 8;
+    static constexpr size_t expansion = 2;
 
 public:
     // constructors and assign
@@ -169,13 +170,7 @@ public:
         return {outer_.data(), ai_ + sz_};
     }
 
-    struct D {
-        D() = delete;
-    };
     const_iterator cbegin() const {
-        if constexpr (std::is_const_v<std::remove_reference_t<decltype(outer_.data())>>) {
-            D d;
-        }
         return {outer_.data(), ai_};
     }
 
@@ -200,26 +195,25 @@ private:
             NoThrowForwardIt d_first,
             UnaryPred P = [](){return false;}) -> NoThrowForwardIt;
 
-    void allocateBlocks(size_t n) {
-        outer_.resize(n);
-        size_t i = 0;
+    void allocateBlocks(vector<pointer, rebinded>& v, size_t start, size_t stop) {
+        size_t i = start;
         try {
-            for (; i < n; ++i) {
-                auto& p = outer_[i];
+            for (; i < stop; ++i) {
+                auto& p = v[i];
                 p = alloc_traits::allocate(alloc_, BlockSize);
             }
         } catch (std::bad_alloc&) {
-            for (size_t j = 0; j != i; ++j) {
-                auto p = outer_[j];
+            for (size_t j = start; j != i; ++j) {
+                auto p = v[j];
                 alloc_traits::deallocate(alloc_, p, BlockSize); 
             }
             throw;
         }
     }
 
-    void deallocateBlocks() {
-        for (auto p: outer_) {
-            alloc_traits::deallocate(alloc_, p, BlockSize);
+    void deallocateBlocks(vector<pointer, rebinded>& v, size_t pos = 0) {
+        for (size_t i = pos; i < v.size(); ++i) {
+            alloc_traits::deallocate(alloc_, v[i], BlockSize);
         }
     }
 
