@@ -107,7 +107,7 @@ void deque<T, Allocator>::emplace_back(Args&&... args) {
         deallocateBlocks(newOuter, i);
     }
 
-    std::swap(outer_, newOuter);
+    swap(outer_, newOuter);
     ++sz_;
 }
 
@@ -140,7 +140,7 @@ void deque<T, Allocator>::emplace_front(Args&&... args) {
         deallocateBlocks(newOuter, offset);
     }
 
-    std::swap(outer_, newOuter);
+    swap(outer_, newOuter);
     ai_ += offset * BlockSize;
     --ai_;
     ++sz_;
@@ -208,6 +208,42 @@ template <typename T, typename Allocator>
 void deque<T, Allocator>::pop_front() {
 }
 
+// TODO:
+template<typename T, typename Allocator>
+template<typename... Args>
+void deque<T, Allocator>::emplace(const_iterator pos, Args&&... args) {
+    if (pos == cend()) {
+        emplace_back(std::forward<Args>(args)...);
+        return;
+    }
+    if (pos == cbegin()) {
+        emplace_front(std::forward<Args>(args)...);
+        return;
+    }
+
+    // shift all to end or to begin
+    // destroy &*pos
+    // construct new in free &*pos
+}
+
+template<typename T, typename Allocator>
+void deque<T, Allocator>::insert(const_iterator pos, value_type value) {
+    emplace(pos, std::move(value));
+}
+
+// TODO:
+template<typename T, typename Allocator>
+deque<T, Allocator>::iterator deque<T, Allocator>::erase(const_iterator pos) {
+    iterator p = begin() + std::distance(cbegin(), pos);
+    for (iterator it = p; it != end() - 1; ++it) {
+        *it = std::move(*(it + 1));
+    }
+    alloc_traits::destroy(alloc_, std::addressof(*(cend() - 1)));
+    --sz_;
+
+    return p;
+}
+
 // private
 
 template <typename T, typename Allocator>
@@ -259,31 +295,6 @@ auto deque<T, Allocator>::uninitialized_move(
         }
         throw;
     }
-}
-
-
-// TODO:
-template<typename T, typename Allocator>
-template<typename... Args>
-void deque<T, Allocator>::emplace(const_iterator pos, Args&&... args) {
-}
-
-template<typename T, typename Allocator>
-void deque<T, Allocator>::insert(const_iterator pos, value_type value) {
-    emplace(pos, std::move(value));
-}
-
-template<typename T, typename Allocator>
-deque<T, Allocator>::iterator deque<T, Allocator>::erase(
-        const_iterator pos) {
-    iterator p = begin() + std::distance(cbegin(), pos);
-    for (auto it = p; it != end() - 1; ++it) {
-        *it = std::move(*(it + 1));
-    }
-    alloc_traits::destroy(alloc_, std::addressof(*(cend() - 1)));
-    --sz_;
-
-    return p;
 }
 
 // friend
