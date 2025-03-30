@@ -198,47 +198,61 @@ template<typename T, typename Allocator>
 void deque<T, Allocator>::shrink_to_fit() {
 }
 
-// TODO:
 template <typename T, typename Allocator>
 void deque<T, Allocator>::pop_back() {
+    erase(cend() - 1);
 }
 
-// TODO:
 template <typename T, typename Allocator>
 void deque<T, Allocator>::pop_front() {
+    erase(cbegin());
 }
 
-// TODO:
 template<typename T, typename Allocator>
 template<typename... Args>
-void deque<T, Allocator>::emplace(const_iterator pos, Args&&... args) {
-    if (pos == cend()) {
+deque<T, Allocator>::iterator deque<T, Allocator>::emplace(const_iterator pos, Args&&... args) {
+    auto distance_to_begin = std::distance(cbegin(), pos);
+    auto distance_to_end = std::distance(pos, cend());
+    iterator p = begin() + std::distance(cbegin(), pos);
+
+    if (distance_to_end < distance_to_begin) {
         emplace_back(std::forward<Args>(args)...);
-        return;
-    }
-    if (pos == cbegin()) {
+        for (auto it = end() - 1; it != pos; --it) {
+            std::swap(*it, *(it - 1));
+        }
+    } else {
         emplace_front(std::forward<Args>(args)...);
-        return;
+        for (auto it = begin(); it != pos - 1; ++it) {
+            std::swap(*it, *(it + 1));
+        }
     }
 
-    // shift all to end or to begin
-    // destroy &*pos
-    // construct new in free &*pos
+    return p;
 }
 
 template<typename T, typename Allocator>
-void deque<T, Allocator>::insert(const_iterator pos, value_type value) {
-    emplace(pos, std::move(value));
+deque<T, Allocator>::iterator deque<T, Allocator>::insert(const_iterator pos, value_type value) {
+    return emplace(pos, std::move(value));
 }
 
-// TODO:
 template<typename T, typename Allocator>
 deque<T, Allocator>::iterator deque<T, Allocator>::erase(const_iterator pos) {
+    auto distance_to_begin = std::distance(cbegin(), pos);
+    auto distance_to_end = std::distance(pos, cend());
     iterator p = begin() + std::distance(cbegin(), pos);
-    for (iterator it = p; it != end() - 1; ++it) {
-        *it = std::move(*(it + 1));
+
+    if (distance_to_end < distance_to_begin) {
+        for (iterator it = p; it != end() - 1; ++it) {
+            *it = std::move(*(it + 1));
+        }
+        alloc_traits::destroy(alloc_, std::addressof(*(cend() - 1)));
+    } else {
+        for (iterator it = p; it != begin(); --it) {
+            *it = std::move(*(it - 1));
+        }
+        alloc_traits::destroy(alloc_, std::addressof(*begin()));
+        ++ai_;
     }
-    alloc_traits::destroy(alloc_, std::addressof(*(cend() - 1)));
     --sz_;
 
     return p;

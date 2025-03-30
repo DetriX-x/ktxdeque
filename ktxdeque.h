@@ -76,9 +76,9 @@ public:
     // modifiers
 
     template<typename... Args>
-    void emplace(const_iterator, Args&&... args);
+    iterator emplace(const_iterator, Args&&... args);
 
-    void insert(const_iterator pos, value_type value);
+    iterator insert(const_iterator pos, value_type value);
 
     iterator erase(const_iterator pos);
 
