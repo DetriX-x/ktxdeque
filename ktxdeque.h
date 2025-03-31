@@ -124,7 +124,7 @@ public:
     // TODO:
     size_type capacity() const { return -1; }
 
-    [[nodiscard]] bool empty() { return sz_; }
+    [[nodiscard]] bool empty() { return !sz_; }
 
     // TODO:
     template <typename Self>
@@ -179,6 +179,14 @@ public:
     }
 
 private:
+    std::tuple<size_t, size_t, size_t, size_t> getCapacityState() const {
+        auto totalNumberOfCells = outer_.size() * BlockSize;
+        auto freeBlocksFromBot = (totalNumberOfCells - (ai_ + sz_) + 1) / BlockSize;
+        auto freeBlocksFromTop = ai_ / BlockSize;
+        auto occupiedBlocks = outer_.size() - freeBlocksFromBot - freeBlocksFromTop;
+        return {totalNumberOfCells, freeBlocksFromBot, freeBlocksFromTop, occupiedBlocks};
+    }
+
     template <std::input_iterator InputIt,
              std::forward_iterator NoThrowForwardIt>
     auto uninitialized_move(
@@ -214,6 +222,7 @@ private:
     void deallocateBlocks(vector<pointer, rebinded>& v, size_t pos = 0) {
         for (size_t i = pos; i < v.size(); ++i) {
             alloc_traits::deallocate(alloc_, v[i], BlockSize);
+            v[i] = nullptr;
         }
     }
 

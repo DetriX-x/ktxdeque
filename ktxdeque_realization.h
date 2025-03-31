@@ -82,17 +82,19 @@ deque<T, Allocator>::deque(const deque<T, Allocator>& other)
 template <typename T, typename Allocator>
 template <typename... Args>
 void deque<T, Allocator>::emplace_back(Args&&... args) {
-    auto n = outer_.size() * BlockSize;
+    if (outer_.empty()) {
+        outer_.push_back(nullptr);
+        allocateBlocks(outer_, 0, 1);
+        ai_ = BlockSize / 2 - 1;
+    }
+    auto [n, freeBlocksFromBot, freeBlocksFromTop, occupiedBlocks] = getCapacityState();
+
     if (ai_ + sz_ < n) {
         alloc_traits::construct(alloc_, &*end(), std::forward<Args>(args)...);
         ++sz_;
         return;
     }
-    const auto freeBlocksFromTop = ai_ / BlockSize;
-    const auto freeBlocksFromBot = (n - (ai_ + sz_) + 1) / BlockSize;
-    const auto occupiedBlocks = outer_.size() - freeBlocksFromBot - freeBlocksFromTop;
     const auto newBlockCount = occupiedBlocks * expansion + outer_.size();
-
     vector<pointer, rebinded> newOuter(newBlockCount);
 
     size_t i = 0;
@@ -114,18 +116,20 @@ void deque<T, Allocator>::emplace_back(Args&&... args) {
 template <typename T, typename Allocator>
 template <typename... Args>
 void deque<T, Allocator>::emplace_front(Args&&... args) {
-    auto n = outer_.size() * BlockSize;
+    if (outer_.empty()) {
+        outer_.push_back(nullptr);
+        allocateBlocks(outer_, 0, 1);
+        ai_ = BlockSize / 2 - 1;
+    }
+    auto [n, freeBlocksFromBot, freeBlocksFromTop, occupiedBlocks] = getCapacityState();
+
     if (ai_ != 0) {
         alloc_traits::construct(alloc_, &*(begin() - 1), std::forward<Args>(args)...);
         --ai_;
         ++sz_;
         return;
     }
-    const auto freeBlocksFromTop = ai_ / BlockSize;
-    const auto freeBlocksFromBot = (n - (ai_ + sz_) + 1) / BlockSize;
-    const auto occupiedBlocks = outer_.size() - freeBlocksFromBot - freeBlocksFromTop;
     const auto newBlockCount = occupiedBlocks * expansion + outer_.size();
-
     vector<pointer, rebinded> newOuter(newBlockCount);
 
     size_t offset = newBlockCount - outer_.size();
@@ -183,9 +187,25 @@ std::conditional_t<
         return std::forward<Self>(self)[index];
 }
 
-// TODO:
 template<typename T, typename Allocator>
 void deque<T, Allocator>::resize(size_type count, const value_type& val) {
+    if (sz_ == count) {
+        return;
+    }
+
+    if (sz_ < count) {
+        auto diff = count - sz_;
+        while (diff) {
+            push_back(val);
+            --diff;
+        }
+    } else {
+        auto diff = sz_ - count;
+        while (diff) {
+            pop_back();
+            --diff;
+        }
+    }
 }
 
 template<typename T, typename Allocator>
@@ -193,9 +213,26 @@ void deque<T, Allocator>::resize(size_type count) {
     resize(count, T());
 }
 
-// TODO:
 template<typename T, typename Allocator>
 void deque<T, Allocator>::shrink_to_fit() {
+    if (empty()) {
+        deallocateBlocks(outer_, 0);
+    }
+    auto [n, freeBlocksFromBot, freeBlocksFromTop, occupiedBlocks] = getCapacityState();
+
+    if (occupiedBlocks == outer_.size()) {
+        return;
+    }
+
+    for (size_t i = 0; i < freeBlocksFromTop; ++i) {
+        alloc_traits::deallocate(alloc_, outer_[i], BlockSize);
+        outer_[i] = nullptr;
+    }
+    for (size_t i = 0; i < freeBlocksFromBot; ++i) {
+        alloc_traits::deallocate(alloc_, outer_[i + freeBlocksFromTop + occupiedBlocks], BlockSize);
+        outer_[i + freeBlocksFromTop + occupiedBlocks] = nullptr;
+    }
+
 }
 
 template <typename T, typename Allocator>
@@ -241,7 +278,7 @@ deque<T, Allocator>::iterator deque<T, Allocator>::erase(const_iterator pos) {
     auto distance_to_end = std::distance(pos, cend());
     iterator p = begin() + std::distance(cbegin(), pos);
 
-    if (distance_to_end < distance_to_begin) {
+    if (distance_to_end <= distance_to_begin) {
         for (iterator it = p; it != end() - 1; ++it) {
             *it = std::move(*(it + 1));
         }
