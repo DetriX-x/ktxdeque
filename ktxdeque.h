@@ -39,14 +39,23 @@ private:
     size_type sz_;
 
 #if defined(KTXDEBUG)
+    // to allocate memory for pointers will use the default allocator
     using rebinded = std::allocator<pointer>;
 #else 
+    // to allocate memory for pointers will use the custom allocator
     using rebinded = typename alloc_traits::template rebind_alloc<pointer>;
 #endif
     vector<pointer, rebinded> outer_;
     [[no_unique_address]] allocator_type alloc_;
 
-    static constexpr int BlockSize = 8;
+    static constexpr auto chunkSize = 512ULL;
+    static constexpr size_t BlockSize = []() -> size_t {
+        if constexpr (chunkSize / sizeof(value_type) != 0) {
+            return chunkSize / sizeof(value_type);
+        } else {
+            return 8ULL;
+        }
+    }();
     static constexpr size_t expansion = 2;
 
 public:
