@@ -5,6 +5,7 @@
 #include <memory>
 #include <iterator>
 #include <iostream>
+#include <concepts>
 #include "../ktxvector/ktxvector.h"
 
 namespace ktx {
@@ -69,6 +70,10 @@ public:
         : ai_{}, sz_{0}, outer_{}, alloc_{a} {}
 
     explicit deque(size_type n, const T& val = T(), Allocator a = Allocator());
+
+    template<std::forward_iterator Iter>
+    deque(Iter fst, Iter lst);
+
 
     deque(const deque& other);
 

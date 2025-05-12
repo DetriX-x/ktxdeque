@@ -57,6 +57,37 @@ deque<T, Allocator>::deque(size_type n, const T& val, Allocator a) : ai_{0}, sz_
     }
 }
 
+template <typename T, typename Allocator>
+template <std::forward_iterator Iter>
+deque<T, Allocator>::deque(Iter fst, Iter lst): ai_{0}, sz_{0} {
+    if constexpr (std::is_base_of_v<std::random_access_iterator_tag,
+            typename std::iterator_traits<Iter>::iterator_category>) {
+        sz_ = std::distance(fst, lst);
+        auto blocks_count = sz_*2 / BlockSize + (sz_*2 % BlockSize ? 1 : 0);
+        auto count_of_free_cells = blocks_count * BlockSize;
+        ai_ = (count_of_free_cells - sz_) / 2;
+
+
+        outer_.resize(blocks_count);
+        allocateBlocks(outer_, 0, blocks_count);
+
+        auto i = begin();
+        try {
+            for (; i != end(); ++i, ++fst) {
+                alloc_traits::construct(alloc_, &*i, std::move_if_noexcept(*fst));
+            }
+        } catch (...) {
+            for (auto j = begin(); j != i; ++j) {
+                alloc_traits::destroy(alloc_, &*j);
+            }
+            deallocateBlocks(outer_);
+            throw;
+        }
+    } else {
+        std::copy(fst, lst, std::back_inserter(*this));
+    }
+}
+
 template<typename T, typename Allocator>
 deque<T, Allocator>::deque(const deque<T, Allocator>& other)
     : ai_{other.ai_}
