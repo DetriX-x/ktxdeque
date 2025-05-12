@@ -92,7 +92,8 @@ template<typename T, typename Allocator>
 deque<T, Allocator>::deque(const deque<T, Allocator>& other)
     : ai_{other.ai_}
     , sz_{other.sz_}
-    , outer_{} {
+    , outer_{}
+    , alloc_{std::allocator_traits<Allocator>::select_on_container_copy_construction(other.alloc_)} {
     outer_.resize(other.outer_.size());
     allocateBlocks(outer_, 0, other.outer_.size());
     auto i = begin();
